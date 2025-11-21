@@ -1,0 +1,39 @@
+# Arduino
+*.ino.hex
+*.ino.bin
+*.elf
+*.eep
+*.hex
+*.bin
+*.o
+*.d
+*.lst
+*.map
+*.sym
+*.lss
+*.tmp
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+*.DS_Store
+Thumbs.db
+
+# Build directories
+build/
+.cache/
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
