@@ -1,9 +1,10 @@
 #include "Config.h"
 #include "Recorder.h"
+#include "Uploader.h"
 
 Recorder recorder;
+Uploader uploader;
 
-// This is the interrupt service routine (ISR) for the touch pin.
 // It calls the recorder's method to signal a toggle request.
 void IRAM_ATTR toggle() {
   recorder.toggleRecording();
@@ -32,6 +33,8 @@ void setup() {
     }
   }
   Serial.println("Initialization complete!");
+
+  // WiFi will be connected on demand when recording stops
 }
 
 void loop() {

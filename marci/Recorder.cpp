@@ -1,4 +1,7 @@
 #include "Recorder.h"
+#include "Uploader.h"
+
+extern Uploader uploader;
 
 Recorder::Recorder() : isRecording(false), toggleRequested(false), lastToggleTime(0), recordingStartTime(0) {}
 
@@ -54,6 +57,7 @@ void Recorder::toggleRecording() {
 void Recorder::startRecording() {
     isRecording = true;
     digitalWrite(LED_BUILTIN, isRecording);
+    sdManager.startNewRun();
     sdManager.createNewFile();
     recordingStartTime = millis();
     Serial.println("Recording started.");
@@ -64,4 +68,5 @@ void Recorder::stopRecording() {
     digitalWrite(LED_BUILTIN, isRecording);
     sdManager.closeFile();
     Serial.println("Recording stopped.");
+    uploader.syncDirectory("/" + String(sdManager.getRunCount()));
 }

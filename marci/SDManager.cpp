@@ -1,7 +1,7 @@
 #include "SDManager.h"
 #include "Config.h"
 
-SDManager::SDManager() : dataLength(0), runCount(0) {}
+SDManager::SDManager() : dataLength(0), runCount(0), currentRun(-1) {}
 
 bool SDManager::begin() {
     if (!SD.begin(SD_CARD_PIN)) {
@@ -13,14 +13,19 @@ bool SDManager::begin() {
     while (SD.exists("/" + String(runCount))) {
         runCount++;
     }
-    SD.mkdir("/" + String(runCount));
     
     Serial.println("SD card mounted.");
     return true;
 }
 
+void SDManager::startNewRun() {
+    currentRun = runCount;
+    SD.mkdir("/" + String(currentRun));
+    runCount++;
+}
+
 String SDManager::getNextFilename() {
-    return "/" + String(runCount) + "/" + String(millis()) + ".wav";
+    return "/" + String(currentRun) + "/" + String(millis()) + ".wav";
 }
 
 void SDManager::createNewFile() {

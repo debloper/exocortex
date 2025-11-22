@@ -2,69 +2,76 @@
 
 > ॐ क्रतो स्मर कृतं स्मर क्रतो स्मर कृतं स्मर ॥
 
-First stage runtime for Manas: **Marci**&mdash;*The Mute Mighty Maiden!*
+First-stage runtime for Manas: **Marci**&mdash;*The Mute Mighty Maiden!*
 
-Touch activated wearable audio recorder, with high local storage resiliency, and (optional) cloud back up.
+A touch-activated wearable audio recorder for the Seeed Studio XIAO ESP32S3 Sense. Records continuous audio in 1-minute WAV segments to a microSD card, with optional cloud backup to a remote file server.
+
+## ✨ Features
+
+- **Segmented Recording**: Save audio in 1-minute WAV files to minimize data loss from interruptions.
+- **Touch Control**: Start/stop recording with a capacitive touch on the designated pin.
+- **Run-Based Organization**: Keep each recording session separated by directories (e.g., `/0/`, `/1/`).
+- **Unique Filenames**: Use device uptime (milliseconds) for filenames to avoid overwrites.
+- **Visual Feedback**: Indicate recording status with onboard LED (ON = recording, OFF = idle).
+- **WiFi Backup**: [optionally] connect to WiFi after recording stops to upload files to a file server.
+
+## 🛠️ Hardware
+
+- **Board**: Seeed Studio XIAO ESP32S3 Sense
+- **Microphone**: Onboard PDM microphone
+- **Storage**: MicroSD card (FAT32 formatted)
+- **Touch Sensor**: Capacitive surface connected to touch pin
+- **WiFi**: Access to a network (for uploads)
+
+## 🚀 Usage
+
+1. **Setup Arduino IDE**:
+   - Select board: `Seeed Studio XIAO ESP32S3`
+   - Enable PSRAM: `Tools` → `PSRAM` → `OPI PSRAM`
+   - Install required libraries: `WiFi`, `SD`, `ESP_I2S`
+   - Open Serial Monitor at 115200 baud for logs.
+   - Open `marci.ino` in Arduino IDE.
+
+2. **Adjust Config.h**:
+   - Set `WIFI_SSID` and `WIFI_PASSWORD` for your network.
+   - Set `SERVER_HOST` and `SERVER_PORT` (tip: use `copyparty`).
+   - Adjust pins, recording duration, or other settings as needed.
+
+3. **Flash Firmware**:
+   - Connect the ESP32 module with USB
+   - Ensure Arduino IDE can recognize it
+   - Verify, compile, and upload the sketch
+
+4. **Try it out**:
+   - Touch pin 1 (perhaps with a pin, in lieu of capacitive surface) to start (LED on).
+   - Talk for as long as you want, or until the battery or the TF card runs out...
+   - Touch pin 1 again to stop the recording (LED off)
+   - If auto-upload is configured, the device will attempt to connect and upload.
+
+### 🌐 Configuring Backup
+
+To simply simulate a cloud backup, we recommend setting up a `copyparty` file server:
+
+1. Install: `pip install copyparty`
+2. Run: `copyparty /path/to/backup/dir`
+3. We skipped authentication as it's only for personal/demonstrative use.
+
+Files are uploaded to `/session/filename.wav` (e.g., `/0/60000.wav`).
+
+## 📁 SD Card Structure
+
+- Directories: One per recording session (e.g., `/0/`, `/1/`).
+- Files: Named by uptime in ms (e.g., `60000.wav`, `120000.wav`).
+
+Example:
+```
+/0/
+  ├── 60000.wav
+  └── 120000.wav
+/1/
+  └── 60000.wav
+```
 
 ---
 
-This firmware is designed for the ***Seeed Studio XIAO ESP32S3 Sense*** to perform continuous audio recording to a microSD card. It is triggered by a capacitive touch sensor and saves audio in 1-minute WAV file segments.
-
-## Key Features
-
-- **Segmented Recording**: Automatically saves audio in 1-minute WAV files, minimizing data loss from power cuts or other interruptions.
-- **Continuous Operation**: After each 1-minute segment is saved, a new recording starts immediately without missing any audio.
-- **Touch Control**: A simple touch on the designated pin starts and stops the recording sequence.
-- **Failsafe File Naming**: Creates a new directory for each power cycle (`run`) and uses the device uptime in milliseconds for filenames, preventing accidental overwrites.
-- **Visual Feedback**: The onboard LED indicates the recording status (ON for recording, OFF for idle).
-- **Modular Codebase**: The source code is organized into logical modules (`Recorder`, `SDManager`) for easy maintenance and future development.
-
-## Hardware Requirements
-
-- **Board**: **Seeed Studio XIAO ESP32S3 Sense**
-- **Microphone**: The onboard PDM microphone is used.
-- **Storage**: A microSD card connected to the appropriate pins.
-- **Touch Sensor**: A wire or capacitive surface connected to the touch input pin.
-
-### ❗ Important Configuration
-
-For this firmware to function correctly, **OPI PSRAM must be enabled** in your Arduino IDE board settings.
-- In Arduino IDE: `Tools` -> `PSRAM` -> `OPI PSRAM`.
-
-## Pinout
-
-The following pins are used by the firmware. They can be reconfigured in `Config.h`.
-
-| Function      | Pin |
-|---------------|-----|
-| I2S BCLK      | 42  |
-| I2S LRCLK/WS  | 41  |
-| SD Card (CS)  | 21  |
-| Touch Input   | 1   |
-
-## How to Use
-
-1.  **Setup Hardware**: Connect your microSD card reader and touch sensor to the pins listed above.
-2.  **Configure IDE**: Open the project in the Arduino IDE and ensure you have selected the correct board (`Seeed Studio XIAO ESP32S3`) and enabled OPI PSRAM.
-3.  **Flash Firmware**: Compile and upload the `marci.ino` sketch to your device.
-4.  **Monitor (Optional)**: You can open the Serial Monitor at 115200 baud to view status messages. The firmware will wait up to 500ms for a connection before proceeding.
-5.  **Start Recording**: Touch the sensor on Pin 1. The onboard LED will turn on, and the device will start saving audio to the SD card.
-6.  **Stop Recording**: Touch the sensor again. The LED will turn off, and the final audio segment will be saved.
-
-## SD Card File Structure
-
-The firmware organizes recordings on the SD card to prevent data loss and confusion between sessions.
-
-- A new directory is created each time the device is powered on (e.g., `/0`, `/1`, `/2`, ...).
-- Inside each directory, WAV files are named after the number of milliseconds that had passed since the device booted (e.g., `60000.wav`, `120000.wav`).
-
-Example structure:
-```
-/0/
-  - 60000.wav
-  - 120000.wav
-  - 180000.wav
-/1/
-  - 60000.wav
-  - 120000.wav
-```
+*Built with ❤️*
