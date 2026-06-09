@@ -23,15 +23,22 @@ bool WiFiManager::connect() {
     DLOG("[WiFi] Scanning for known networks...");
     int found = WiFi.scanNetworks();
 
+    // Iterate over our known networks (priority order), not the scan list.
+    // Cost scales with the few provisioned networks, not the many nearby ones.
     for (int i = 0; i < WIFI_NETWORK_COUNT; i++) {
+        bool available = false;
         for (int j = 0; j < found; j++) {
             if (WiFi.SSID(j) == String(WIFI_NETWORKS[i][0])) {
-                DLOGF("[WiFi] Found: %s\n", WIFI_NETWORKS[i][0]);
-                if (_tryNetwork(WIFI_NETWORKS[i][0], WIFI_NETWORKS[i][1])) {
-                    _saveLastNetwork(WIFI_NETWORKS[i][0], WIFI_NETWORKS[i][1]);
-                    return true;
-                }
+                available = true;
+                break;  // this known network is in range — stop scanning for it
             }
+        }
+        if (!available) continue;
+
+        DLOGF("[WiFi] Found: %s\n", WIFI_NETWORKS[i][0]);
+        if (_tryNetwork(WIFI_NETWORKS[i][0], WIFI_NETWORKS[i][1])) {
+            _saveLastNetwork(WIFI_NETWORKS[i][0], WIFI_NETWORKS[i][1]);
+            return true;
         }
     }
 
@@ -64,14 +71,16 @@ bool WiFiManager::_tryNetwork(const char* ssid, const char* password) {
 }
 
 void WiFiManager::_saveLastNetwork(const char* ssid, const char* password) {
-    _prefs.begin("moneo_wifi", false);
+    // Runtime state managed by the firmware (last connected network, future:
+    // last file synced, etc.) — kept separate from the provisioned network list.
+    _prefs.begin("moneo_runtime", false);
     _prefs.putString("ssid", ssid);
     _prefs.putString("pass", password);
     _prefs.end();
 }
 
 void WiFiManager::_loadLastNetwork(String& ssid, String& password) {
-    _prefs.begin("moneo_wifi", true);
+    _prefs.begin("moneo_runtime", true);
     ssid     = _prefs.getString("ssid", "");
     password = _prefs.getString("pass", "");
     _prefs.end();
