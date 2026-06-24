@@ -12,8 +12,8 @@ const int I2S_BCLK_PIN    = 42;
 const int I2S_LRCLK_PIN   = 41;
 
 // ─── TOUCH SENSOR ────────────────────────────────────────────
-const int          TOUCH_THRESHOLD  = 22000;
-const unsigned long DEBOUNCE_DELAY  = 2000;
+const int          TOUCH_THRESHOLD  = 50000;
+const unsigned long DEBOUNCE_DELAY  = 5000;
 
 // ─── AUDIO SETTINGS ──────────────────────────────────────────
 const int SAMPLE_RATE     = 16000;

@@ -13,12 +13,14 @@
 // Recorder — Records audio into a SINGLE WAV file.
 //
 // Flow:
-//   Touch start → create dated WAV file
-//   Every 10s: flush PSRAM buffer segment to WAV file
-//   Touch stop → finalize WAV header → send to AI
+//   Touch start → create dated WAV file with a placeholder header, close it
+//   Every 10s:   open (append) → write the buffered audio → close
+//   Touch stop:  append the remainder, then reopen once to write the real
+//                length into the header → send to AI
 //
-// The WAV file grows continuously — one file per session.
-// No chunk files. No gateway. File sent directly to AI when done.
+// One file per session, no chunk files. The file is kept closed between
+// segments, so a power loss can corrupt at most the latest 10s, not the
+// whole recording.
 // ============================================================
 
 class Recorder {
@@ -35,6 +37,7 @@ private:
     void _startRecording();
     void _stopRecording();
     void _writeWavHeader(File& f, uint32_t dataLen);
+    void _flushSegment();
     String _generateFilename();
 
     static void _captureTaskEntry(void* arg);
@@ -49,7 +52,6 @@ private:
     uint8_t*     _psramBuf;
     size_t       _psramWritten;
 
-    File         _wavFile;
     String       _wavPath;
     uint32_t     _dataLength;
 

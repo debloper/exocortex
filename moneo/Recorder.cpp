@@ -48,6 +48,12 @@ void Recorder::loop() {
 
     unsigned long now = millis();
     if (now - _lastToggleTime < DEBOUNCE_DELAY) return;
+
+    // Confirm a real touch is still present. The interrupt can fire on brief
+    // electrical noise; a genuine press is still held when we reach here (reads
+    // above threshold), while a noise spike has already decayed and is rejected.
+    if (touchRead(TOUCH_PIN) < TOUCH_THRESHOLD) return;
+
     _lastToggleTime = now;
 
     if (!_recording) {
@@ -107,6 +113,28 @@ void Recorder::_writeWavHeader(File& f, uint32_t dataLen) {
     f.write((uint8_t*)&dataLen,     4);
 }
 
+// ── Append the buffered audio to the WAV file ──────────────
+// open → write → close, every segment. Keeping the file closed between
+// segments means a power loss can corrupt at most the latest segment, not
+// the whole recording. Caller must hold _bufMutex while the capture task is
+// running (the stop path calls this after the tasks have exited).
+void Recorder::_flushSegment() {
+    if (_psramWritten == 0) return;
+
+    File f = SD.open(_wavPath.c_str(), FILE_APPEND);
+    if (!f) {
+        // Keep the buffer and retry on the next cycle rather than dropping audio.
+        DLOG("[Writer] Append open failed; will retry next segment.");
+        return;
+    }
+    size_t written = f.write(_psramBuf, _psramWritten);
+    f.close();
+
+    _dataLength  += written;
+    _psramWritten = 0;
+    DLOGF("[Writer] Appended %u bytes (total: %u)\n", written, _dataLength);
+}
+
 // ── Start ──────────────────────────────────────────────────
 void Recorder::_startRecording() {
     DLOG("[Recorder] Starting...");
@@ -122,15 +150,16 @@ void Recorder::_startRecording() {
     _wavPath = _generateFilename();
     DLOGF("[Recorder] File: %s\n", _wavPath.c_str());
 
-    _wavFile = SD.open(_wavPath.c_str(), FILE_WRITE);
-    if (!_wavFile) {
+    // Create the file and lay down a placeholder header, then close it.
+    // Segments are appended afterwards; the real length is written on stop.
+    File f = SD.open(_wavPath.c_str(), FILE_WRITE);
+    if (!f) {
         DLOG("[Recorder] Cannot create WAV file!");
         _recording = false;
         return;
     }
-
-    // Write placeholder header (updated on stop)
-    _writeWavHeader(_wavFile, 0);
+    _writeWavHeader(f, 0);
+    f.close();
 
     _segmentStartMs = millis();
     digitalWrite(LED_BUILTIN, HIGH);
@@ -151,27 +180,26 @@ void Recorder::_stopRecording() {
 
     digitalWrite(LED_BUILTIN, LOW);
 
-    // Give tasks time to finish naturally
+    // Give the capture + writer tasks time to exit.
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     _captureTask_h = nullptr;
     _writerTask_h  = nullptr;
 
-    // Flush remaining PSRAM buffer to SD
-    if (_psramWritten > 0 && _wavFile) {
-        _wavFile.write(_psramBuf, _psramWritten);
-        _dataLength  += _psramWritten;
-        _psramWritten = 0;
-        DLOGF("[Recorder] Final flush: %u bytes\n", _dataLength);
-    }
+    // Append whatever is left in the buffer. The tasks have stopped, so no
+    // mutex is needed here.
+    _flushSegment();
 
-    // Finalize WAV header
-    if (_wavFile) {
-        _wavFile.seek(0);
-        _writeWavHeader(_wavFile, _dataLength);
-        _wavFile.close();
+    // Reopen once to write the real data length into the header (r+ keeps the
+    // existing audio; it only overwrites the 44-byte header at the start).
+    File f = SD.open(_wavPath.c_str(), "r+");
+    if (f) {
+        _writeWavHeader(f, _dataLength);
+        f.close();
         DLOGF("[Recorder] WAV saved: %s (%u bytes)\n",
               _wavPath.c_str(), _dataLength);
+    } else {
+        DLOG("[Recorder] Could not reopen WAV to finalize header!");
     }
 
     DLOG("[Recorder] Stopped.");
@@ -217,19 +245,10 @@ void Recorder::_writerTask() {
     DLOG("[Writer] Task started.");
 
     while (!_stopWriter) {
-        // Every SEGMENT_DURATION_MS, flush PSRAM buffer to SD
+        // Every SEGMENT_DURATION_MS, append the buffered audio to the WAV file.
         if (millis() - _segmentStartMs >= SEGMENT_DURATION_MS) {
             xSemaphoreTake(_bufMutex, portMAX_DELAY);
-
-            if (_psramWritten > 0 && _wavFile) {
-                size_t written = _psramWritten;
-                _wavFile.write(_psramBuf, written);
-                _dataLength  += written;
-                _psramWritten = 0;
-                DLOGF("[Writer] Flushed %u bytes to WAV (total: %u)\n",
-                      written, _dataLength);
-            }
-
+            _flushSegment();
             xSemaphoreGive(_bufMutex);
             _segmentStartMs = millis();
         }
