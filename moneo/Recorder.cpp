@@ -1,10 +1,12 @@
 #include "Recorder.h"
+#include <SD.h>
+#include <FS.h>
 #include <time.h>
 
 Recorder::Recorder()
     : _psramBuf(nullptr), _psramWritten(0),
       _dataLength(0), _recording(false),
-      _toggleRequested(false), _stopWriter(false),
+      _toggleRequested(false), _stopWriter(false), _writeError(false),
       _lastToggleTime(0), _segmentStartMs(0),
       _captureTask_h(nullptr), _writerTask_h(nullptr),
       _bufMutex(nullptr)
@@ -36,7 +38,8 @@ bool Recorder::begin() {
         DLOG("[Recorder] I2S init failed!");
         return false;
     }
-    DLOG("[Recorder] I2S initialized (16kHz, 8-bit).");
+    DLOGF("[Recorder] I2S initialized (%d Hz, %d-bit).\n",
+          SAMPLE_RATE, BITS_PER_SAMPLE);
 
     DLOG("[Recorder] Ready. Touch pin to start.");
     return true;
@@ -63,7 +66,7 @@ void Recorder::loop() {
     }
 }
 
-void Recorder::requestToggle() {
+void IRAM_ATTR Recorder::requestToggle() {
     _toggleRequested = true;
 }
 
@@ -118,21 +121,33 @@ void Recorder::_writeWavHeader(File& f, uint32_t dataLen) {
 // segments means a power loss can corrupt at most the latest segment, not
 // the whole recording. Caller must hold _bufMutex while the capture task is
 // running (the stop path calls this after the tasks have exited).
-void Recorder::_flushSegment() {
-    if (_psramWritten == 0) return;
+//
+// Returns true only if the whole buffer was written. On any failure the caller
+// must abort the recording — a failed or partial append would leave gaps and
+// produce a corrupt WAV, which is worse than a clean failure.
+bool Recorder::_flushSegment() {
+    if (_psramWritten == 0) return true;
 
     File f = SD.open(_wavPath.c_str(), FILE_APPEND);
     if (!f) {
-        // Keep the buffer and retry on the next cycle rather than dropping audio.
-        DLOG("[Writer] Append open failed; will retry next segment.");
-        return;
+        DLOG("[Writer] ERROR: cannot open WAV to append segment.");
+        return false;
     }
-    size_t written = f.write(_psramBuf, _psramWritten);
+
+    size_t toWrite = _psramWritten;
+    size_t written = f.write(_psramBuf, toWrite);
     f.close();
 
     _dataLength  += written;
     _psramWritten = 0;
+
+    if (written != toWrite) {
+        DLOGF("[Writer] ERROR: short write (%u of %u bytes).\n", written, toWrite);
+        return false;
+    }
+
     DLOGF("[Writer] Appended %u bytes (total: %u)\n", written, _dataLength);
+    return true;
 }
 
 // ── Start ──────────────────────────────────────────────────
@@ -140,6 +155,7 @@ void Recorder::_startRecording() {
     DLOG("[Recorder] Starting...");
     _recording     = true;
     _stopWriter    = false;
+    _writeError    = false;
     _dataLength    = 0;
     _psramWritten  = 0;
 
@@ -187,11 +203,21 @@ void Recorder::_stopRecording() {
     _writerTask_h  = nullptr;
 
     // Append whatever is left in the buffer. The tasks have stopped, so no
-    // mutex is needed here.
-    _flushSegment();
+    // mutex is needed here. If it fails, flag the error so the caller knows the
+    // file is incomplete.
+    if (!_flushSegment()) {
+        _writeError = true;
+    }
 
-    // Reopen once to write the real data length into the header (r+ keeps the
-    // existing audio; it only overwrites the 44-byte header at the start).
+    _finalizeHeader();
+
+    DLOG("[Recorder] Stopped.");
+}
+
+// ── Finalize the WAV header ─────────────────────────────────
+// Reopen the file to write the real data length into the header. r+ keeps the
+// existing audio; it only overwrites the 44-byte header at the start.
+void Recorder::_finalizeHeader() {
     File f = SD.open(_wavPath.c_str(), "r+");
     if (f) {
         _writeWavHeader(f, _dataLength);
@@ -201,8 +227,6 @@ void Recorder::_stopRecording() {
     } else {
         DLOG("[Recorder] Could not reopen WAV to finalize header!");
     }
-
-    DLOG("[Recorder] Stopped.");
 }
 
 // ── Capture task ───────────────────────────────────────────
@@ -248,9 +272,21 @@ void Recorder::_writerTask() {
         // Every SEGMENT_DURATION_MS, append the buffered audio to the WAV file.
         if (millis() - _segmentStartMs >= SEGMENT_DURATION_MS) {
             xSemaphoreTake(_bufMutex, portMAX_DELAY);
-            _flushSegment();
+            bool ok = _flushSegment();
             xSemaphoreGive(_bufMutex);
             _segmentStartMs = millis();
+
+            if (!ok) {
+                // A failed write would leave a corrupt/gappy file. Abort: stop
+                // capture, finalize what we have, and flag the error so the
+                // main sketch can signal it (blink).
+                DLOG("[Writer] Aborting recording due to write failure.");
+                _writeError = true;
+                _recording  = false;
+                _stopWriter = true;
+                _finalizeHeader();
+                break;
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));

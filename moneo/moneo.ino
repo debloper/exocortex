@@ -34,8 +34,8 @@ void IRAM_ATTR onTouch() {
 
 void setup() {
     Serial.begin(115200);
-    unsigned long t = millis();
-    while (!Serial && millis() - t < 500) delay(10);
+    unsigned long serialTimeout = millis() + SERIAL_WAIT_MS;
+    while (!Serial && millis() < serialTimeout) { delay(10); }
 
     Serial.println("╔══════════════════════════════════╗");
     Serial.println("║         MONEO — Starting         ║");
@@ -57,8 +57,7 @@ void setup() {
     }
 
     touchAttachInterrupt(TOUCH_PIN, onTouch, TOUCH_THRESHOLD);
-
-    Serial.println("[Moneo] Ready. Touch pin D1 to start recording.");
+    // recorder.begin() already logged the "ready / touch to start" message.
 }
 
 void loop() {
@@ -67,6 +66,12 @@ void loop() {
     // Detect transition: was recording → stopped
     bool nowRecording = recorder.isRecording();
     if (_wasRecording && !nowRecording) {
+        if (recorder.hasError()) {
+            // Recording failed mid-way (SD write error). The partial file was
+            // finalized; signal the failure instead of treating it as success.
+            Serial.println("[Moneo] Recording FAILED (SD write error). File may be incomplete.");
+            _errorBlink();   // halts here, blinking the LED
+        }
         // Recording just stopped — process it
         String wavPath = recorder.lastRecordingPath();
         if (wavPath.length() > 0) {

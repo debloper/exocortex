@@ -28,16 +28,18 @@ public:
     Recorder();
     bool begin();
     void loop();
-    void requestToggle();
+    void IRAM_ATTR requestToggle();
 
     bool isRecording() const { return _recording; }
+    bool hasError() const { return _writeError; }
     String lastRecordingPath() const { return _wavPath; }
 
 private:
     void _startRecording();
     void _stopRecording();
     void _writeWavHeader(File& f, uint32_t dataLen);
-    void _flushSegment();
+    void _finalizeHeader();
+    bool _flushSegment();
     String _generateFilename();
 
     static void _captureTaskEntry(void* arg);
@@ -58,6 +60,7 @@ private:
     volatile bool _recording;
     volatile bool _toggleRequested;
     volatile bool _stopWriter;
+    volatile bool _writeError;
     unsigned long _lastToggleTime;
     unsigned long _segmentStartMs;
 
